@@ -18,6 +18,7 @@ error IonTokenNotWhitelisted(address ionToken);
 error TransferFailed(address token, address from, address to, uint256 amount);
 error InvalidMasterPriceOracle();
 error InvalidUsdcAddress();
+error InsufficientBalance(address token, uint256 requested, uint256 available);
 
 /**
  * @title IonToken Interface
@@ -74,6 +75,13 @@ contract IonicDebtToken is
         address indexed ionToken,
         uint256 ionTokenAmount,
         uint256 mintedAmount
+    );
+    
+    // Event emitted when ionTokens are withdrawn
+    event IonTokensWithdrawn(
+        address indexed ionToken,
+        address indexed recipient,
+        uint256 amount
     );
 
     /**
@@ -214,6 +222,49 @@ contract IonicDebtToken is
         _mint(msg.sender, tokensToMint);
 
         emit TokensMinted(msg.sender, ionToken, amount, tokensToMint);
+    }
+    
+    /**
+     * @notice Allows the owner to withdraw collected ionTokens
+     * @param ionToken Address of the ionToken to withdraw
+     * @param amount Amount of ionTokens to withdraw (0 for all available)
+     * @param recipient Address to receive the ionTokens
+     */
+    function withdrawIonTokens(
+        address ionToken,
+        uint256 amount,
+        address recipient
+    ) external onlyOwner {
+        if (ionToken == address(0)) revert ZeroAddress();
+        if (recipient == address(0)) revert ZeroAddress();
+        
+        IIonToken ionTokenContract = IIonToken(ionToken);
+        uint256 balance = ionTokenContract.balanceOf(address(this));
+        
+        // If amount is 0, withdraw the entire balance
+        uint256 withdrawAmount = amount == 0 ? balance : amount;
+        
+        if (withdrawAmount > balance) 
+            revert InsufficientBalance(ionToken, withdrawAmount, balance);
+        
+        bool success = ionTokenContract.transfer(recipient, withdrawAmount);
+        if (!success) 
+            revert TransferFailed(ionToken, address(this), recipient, withdrawAmount);
+        
+        emit IonTokensWithdrawn(ionToken, recipient, withdrawAmount);
+    }
+    
+    /**
+     * @notice Allows the owner to withdraw the entire balance of an ionToken
+     * @param ionToken Address of the ionToken to withdraw
+     * @param recipient Address to receive the ionTokens
+     */
+    function withdrawIonTokens(
+        address ionToken,
+        address recipient
+    ) external onlyOwner {
+        // Call the full function with amount=0 (which withdraws entire balance)
+        withdrawIonTokens(ionToken, 0, recipient);
     }
 
     /**
