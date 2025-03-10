@@ -66,7 +66,9 @@ const config: HardhatUserConfig = {
        * Note: The config currently leaks internal IDs, but this will be fixed
        * in the future.
        */
-      "forge-std/=npm/forge-std@1.9.4/src/",
+      "forge-std/=npm/forge-std@1.9.6/src/",
+      "@openzeppelin/contracts-upgradeable/=npm/@openzeppelin/contracts-upgradeable@5.2.0/",
+      "@openzeppelin/contracts/=npm/@openzeppelin/contracts@5.2.0/",
     ],
   },
   /*
@@ -89,6 +91,20 @@ const config: HardhatUserConfig = {
    *   found in the "Sending a Transaction to Optimism Sepolia" of the README.
    */
   networks: {
+    hardhat: {
+      type: "edr",
+      chainType: "generic",
+      forking: {
+        url: "https://mainnet.mode.network",
+        blockNumber: 20720089, // Specific block for consistent testing
+        enabled: true,
+      },
+    },
+    mode_mainnet: {
+      type: "http",
+      chainType: "generic",
+      url: "https://mainnet.mode.network",
+    },
     hardhatMainnet: {
       type: "edr",
       chainType: "l1",

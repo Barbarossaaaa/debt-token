@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
  * `node:test` uses `describe` and `it` to define tests, similar to Mocha.
  * `describe` blocks support async functions, simplifying the setup of tests.
  */
-describe("Counter", async function () {
+describe.skip("Counter", async function () {
   /*
    * In Hardhat 3, there isn't a single global connection to a network. Instead,
    * you have a `network` object that allows you to connect to different

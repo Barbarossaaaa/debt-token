@@ -71,3 +71,86 @@ npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
 ---
 
 Feel free to explore the project and provide feedback on your experience with Hardhat 3 Alpha!
+
+# Ionic Recovery Project - Mode Mainnet Fork Testing
+
+This project contains a test suite for the IonicDebtToken contract that uses a forked Mode mainnet for testing interactions with existing contracts.
+
+## Prerequisites
+
+- Node.js (v18 or higher)
+- npm or yarn
+- A Mode mainnet RPC URL (default uses public endpoint but may be rate-limited)
+
+## Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/your-username/ionic-recovery.git
+cd ionic-recovery
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Set up your environment variables by creating a `.env` file:
+```bash
+MODE_MAINNET_RPC_URL=https://mainnet.mode.network
+# Or use your own RPC provider:
+# MODE_MAINNET_RPC_URL=https://your-mode-rpc-provider.com
+```
+
+## Running the Mode Mainnet Fork Tests
+
+To run the tests on a forked Mode mainnet:
+
+```bash
+npx hardhat test test/IonicDebtToken.fork.ts
+```
+
+## About the Test Approach
+
+The tests use Hardhat's network forking capability to create a local copy of the Mode mainnet. This allows:
+
+1. Interaction with existing deployed contracts
+2. Impersonating accounts that hold tokens needed for testing
+3. Testing of contract functionalities in a realistic mainnet environment
+4. Verifying contract behavior with actual token pricing and exchange rates
+
+## Test Configuration
+
+The Mode mainnet fork test uses the following configuration:
+
+- Forks from a specific block for consistent testing
+- Impersonates a whale account to obtain ion tokens for testing
+- Tests the full lifecycle of the IonicDebtToken contract:
+  - Whitelisting ion tokens
+  - Setting and updating scale factors
+  - Minting debt tokens by providing whitelisted ion tokens
+  - Withdrawing collected ion tokens
+
+## Modifying the Tests
+
+If you need to test with different token addresses or configurations:
+
+1. Update the Mode mainnet addresses in `test/IonicDebtToken.fork.ts`:
+```typescript
+const MODE_MAINNET_ADDRESSES = {
+  USDC: "0xd988097fb8612ae244b87df08e2abe6c3f25b08b", // Mode USDC address
+  MASTER_PRICE_ORACLE: "your-oracle-address", 
+  SAMPLE_ION_TOKEN: "your-ion-token-address",
+  WHALE_ADDRESS: "address-with-ion-tokens",
+};
+```
+
+2. Adjust the test parameters as needed for your specific testing scenario.
+
+## Note on ABIs
+
+The test attempts to use the ABIs from compiled artifacts. Make sure to compile your contracts first:
+
+```bash
+npx hardhat compile
+```

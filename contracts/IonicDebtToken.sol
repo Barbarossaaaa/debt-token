@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/**
- * @title Custom Errors
- * @notice Custom errors for IonicDebtToken contract
- */
+// Custom Errors for IonicDebtToken contract
 error ZeroAddress();
 error ZeroAmount();
 error ZeroScaleFactor();
@@ -24,7 +21,7 @@ error InsufficientBalance(address token, uint256 requested, uint256 available);
  * @title IonToken Interface
  * @notice Interface for ionTokens (similar to Compound's cTokens)
  */
-interface IIonToken is IERC20Upgradeable {
+interface IIonToken is IERC20 {
     function exchangeRateCurrent() external returns (uint256);
 
     function underlying() external view returns (address);
@@ -94,7 +91,7 @@ contract IonicDebtToken is
         address _usdcAddress
     ) public initializer {
         __ERC20_init("IonicDebtToken", "dION");
-        __Ownable_init();
+        __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
 
         if (_masterPriceOracle == address(0)) revert InvalidMasterPriceOracle();
@@ -225,16 +222,16 @@ contract IonicDebtToken is
     }
     
     /**
-     * @notice Allows the owner to withdraw collected ionTokens
+     * @notice Internal function to handle ionToken withdrawal logic
      * @param ionToken Address of the ionToken to withdraw
      * @param amount Amount of ionTokens to withdraw (0 for all available)
      * @param recipient Address to receive the ionTokens
      */
-    function withdrawIonTokens(
+    function _withdrawIonTokens(
         address ionToken,
         uint256 amount,
         address recipient
-    ) external onlyOwner {
+    ) internal {
         if (ionToken == address(0)) revert ZeroAddress();
         if (recipient == address(0)) revert ZeroAddress();
         
@@ -255,6 +252,20 @@ contract IonicDebtToken is
     }
     
     /**
+     * @notice Allows the owner to withdraw collected ionTokens
+     * @param ionToken Address of the ionToken to withdraw
+     * @param amount Amount of ionTokens to withdraw (0 for all available)
+     * @param recipient Address to receive the ionTokens
+     */
+    function withdrawIonTokens(
+        address ionToken,
+        uint256 amount,
+        address recipient
+    ) external onlyOwner {
+        _withdrawIonTokens(ionToken, amount, recipient);
+    }
+    
+    /**
      * @notice Allows the owner to withdraw the entire balance of an ionToken
      * @param ionToken Address of the ionToken to withdraw
      * @param recipient Address to receive the ionTokens
@@ -263,8 +274,7 @@ contract IonicDebtToken is
         address ionToken,
         address recipient
     ) external onlyOwner {
-        // Call the full function with amount=0 (which withdraws entire balance)
-        withdrawIonTokens(ionToken, 0, recipient);
+        _withdrawIonTokens(ionToken, 0, recipient);
     }
 
     /**
