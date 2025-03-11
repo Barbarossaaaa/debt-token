@@ -12,6 +12,7 @@ const ION_USDC = "0x2BE717340023C9e14C1Bb12cb3ecBcfd3c3fB038";
  */
 describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
   const { viem, ignition, provider } = await network.connect();
+  const publicClient = await viem.getPublicClient();
   const [walletClient] = await viem.getWalletClients();
   const owner = getAddress(walletClient.account.address);
   let ionicDebtToken: any;
@@ -93,6 +94,12 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
 
       console.log(`\nMinting debt tokens for whale address: ${whaleAddress}\n`);
 
+      // Get initial debt token balance
+      const initialDebtBalance = await ionicDebtToken.read.balanceOf([
+        whaleAddress,
+      ]);
+      console.log(`Initial debt balance: ${initialDebtBalance}`);
+
       // Process each token from the config
       for (const tokenConfig of modeMainnetConfig.tokenConfigs) {
         const tokenAddress = getAddress(tokenConfig.address);
@@ -101,97 +108,51 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
           tokenAddress
         );
 
-        try {
-          const symbol = await tokenContract.read
-            .symbol()
-            .catch(() => "Unknown");
-          const decimals = Number(
-            await tokenContract.read.decimals().catch(() => 18)
-          );
-          const balance = await tokenContract.read.balanceOf([whaleAddress]);
+        const symbol = await tokenContract.read.symbol().catch(() => "Unknown");
+        const decimals = Number(
+          await tokenContract.read.decimals().catch(() => 18)
+        );
+        const balance = await tokenContract.read.balanceOf([whaleAddress]);
 
-          if (balance === 0n) {
-            console.log(
-              `No balance for ${symbol} (${tokenAddress}), skipping...\n`
-            );
-            continue;
-          }
-
-          console.log(`Processing ${symbol} (${tokenAddress})`);
-          console.log(`Raw Balance: ${balance}`);
-          console.log(`Formatted Balance: ${formatUnits(balance, decimals)}\n`);
-
-          // Calculate scale factor based on config
-          const BASE = 1000000000000000000n; // 1e18
-          let scaleFactor;
-
-          if (BigInt(tokenConfig.totalSupplied) === 0n) {
-            scaleFactor = BASE;
-          } else {
-            const totalSupplied = BigInt(tokenConfig.totalSupplied);
-            const illegitimateBorrowed = BigInt(
-              tokenConfig.illegitimateBorrowed
-            );
-
-            // Calculate legitimate percentage: (totalSupplied - illegitimateBorrowed) * 1e18 / totalSupplied
-            const legitimatePercentage =
-              ((totalSupplied - illegitimateBorrowed) * BASE) / totalSupplied;
-
-            // The scale factor is the inverse of the legitimate percentage
-            scaleFactor = (BASE * BASE) / legitimatePercentage;
-          }
-
-          // Whitelist the token with calculated scale factor
-          await ionicDebtToken.write.whitelistIonToken([
-            tokenAddress,
-            scaleFactor,
-          ]);
-
-          // Get initial debt token balance
-          const initialDebtBalance = await ionicDebtToken.read.balanceOf([
-            whaleAddress,
-          ]);
-          console.log(`Initial debt balance: ${initialDebtBalance}`);
-
-          // Approve the IonicDebtToken contract to spend whale's entire balance
-          await tokenContract.write.approve([ionicDebtToken.address, balance], {
-            account: whale.account,
-          });
-
-          // Mint dION tokens using entire balance
-          await ionicDebtToken.write.mint([tokenAddress, balance], {
-            account: whale.account,
-          });
-
-          // Check final debt token balance
-          const finalDebtBalance = await ionicDebtToken.read.balanceOf([
-            whaleAddress,
-          ]);
-          console.log(`Final debt balance: ${finalDebtBalance}`);
-          console.log(`Increase: ${finalDebtBalance - initialDebtBalance}\n`);
-
-          // Verify minting was successful
-          assert.ok(
-            finalDebtBalance > initialDebtBalance,
-            `Should have received debt tokens for ${symbol}`
-          );
-
-          // More specific balance check
-          const expectedIncrease = balance;
-          assert.equal(
-            finalDebtBalance - initialDebtBalance,
-            expectedIncrease,
-            `Debt token balance should have increased by ${balance} for ${symbol}`
-          );
-
-          console.log(`Successfully minted debt tokens for ${symbol}\n---\n`);
-        } catch (error) {
-          console.log(
-            `Error processing token ${tokenAddress}: ${
-              (error as Error).message
-            }\n`
-          );
+        if (balance === 0n) {
+          continue;
         }
+
+        console.log(`Processing ${symbol} (${tokenAddress})`);
+        console.log(`Raw Balance: ${balance}`);
+        console.log(`Formatted Balance: ${formatUnits(balance, decimals)}\n`);
+
+        const initialDebtBalance = await ionicDebtToken.read.balanceOf([
+          whaleAddress,
+        ]);
+
+        // Approve the IonicDebtToken contract to spend whale's entire balance
+        let tx = await tokenContract.write.approve(
+          [ionicDebtToken.address, balance],
+          {
+            account: whale.account,
+          }
+        );
+        await publicClient.waitForTransactionReceipt({
+          hash: tx,
+        });
+
+        // Mint dION tokens using entire balance
+        tx = await ionicDebtToken.write.mint([tokenAddress, balance], {
+          account: whale.account,
+        });
+        await publicClient.waitForTransactionReceipt({
+          hash: tx,
+        });
+
+        // Check final debt token balance
+        const finalDebtBalance = await ionicDebtToken.read.balanceOf([
+          whaleAddress,
+        ]);
+        console.log(`Final debt balance: ${finalDebtBalance}`);
+        console.log(
+          `Increase: ${finalDebtBalance - initialDebtBalance} for ${symbol}\n`
+        );
       }
 
       // Stop impersonating the whale
@@ -199,6 +160,19 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
         method: "hardhat_stopImpersonatingAccount",
         params: [whaleAddress],
       });
+
+      // Check final debt token balance
+      const finalDebtBalance = await ionicDebtToken.read.balanceOf([
+        whaleAddress,
+      ]);
+      console.log(`Final debt balance: ${finalDebtBalance}`);
+      console.log(`Increase: ${finalDebtBalance - initialDebtBalance}\n`);
+
+      // Verify minting was successful
+      assert.ok(
+        finalDebtBalance > initialDebtBalance,
+        `Should have received debt tokens`
+      );
     });
   });
 

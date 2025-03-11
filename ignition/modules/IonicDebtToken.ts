@@ -18,21 +18,21 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
   const networkConfig = getCurrentNetworkConfig();
 
   // Core deployment parameters with defaults and overrides from config
-  const masterPriceOracleAddress = m.getParameter(
-    "masterPriceOracleAddress",
-    networkConfig?.masterPriceOracleAddress || zeroAddress
+  const masterPriceOracleAddress = networkConfig?.masterPriceOracleAddress;
+  console.log(
+    "🚀 ~ IonicDebtTokenModule ~ masterPriceOracleAddress:",
+    masterPriceOracleAddress
   );
 
-  const usdcAddress = m.getParameter(
-    "usdcAddress",
-    networkConfig?.usdcAddress || zeroAddress
-  );
+  const usdcAddress = networkConfig?.usdcAddress;
+  console.log("🚀 ~ IonicDebtTokenModule ~ usdcAddress:", usdcAddress);
 
   // Token configurations for calculating scale factors
-  const tokenConfigs = m.getParameter(
-    "tokenConfigs",
-    networkConfig?.tokenConfigs || []
-  );
+  const tokenConfigs = networkConfig?.tokenConfigs;
+
+  if (!tokenConfigs || !masterPriceOracleAddress || !usdcAddress) {
+    throw new Error("Missing required parameters");
+  }
 
   // Deploy the implementation contract
   const implementation = m.contract("IonicDebtToken");
@@ -70,36 +70,39 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
   // The encodedFunctionCall already contains the initialize call
 
   // Calculate scale factors and whitelist tokens
-  if (tokenConfigs && Array.isArray(tokenConfigs)) {
-    for (const token of tokenConfigs) {
-      // Base of 1e18 (18 decimal places)
-      const BASE = "1000000000000000000";
-      let scaleFactor;
+  for (const token of tokenConfigs) {
+    // Base of 1e18 (18 decimal places)
+    const BASE = "1000000000000000000";
+    let scaleFactor;
 
-      if (token.totalSupplied === "0") {
-        // If total supplied is 0, use a scale factor of 1 (100%)
-        scaleFactor = BASE;
-      } else {
-        // Use string math operations via BigInt
-        const totalSupplied = BigInt(token.totalSupplied);
-        const illegitimateBorrowed = BigInt(token.illegitimateBorrowed);
-        const base = BigInt(BASE);
+    if (token.totalSupplied === "0") {
+      throw new Error("Total supplied is 0");
+    } else {
+      // Use string math operations via BigInt
+      const totalSupplied = BigInt(token.totalSupplied);
+      const illegitimateBorrowed = BigInt(token.illegitimateBorrowed);
+      const base = BigInt(BASE);
 
-        // Calculate legitimate percentage: (totalSupplied - illegitimateBorrowed) * 1e18 / totalSupplied
-        const legitimatePercentage =
-          ((totalSupplied - illegitimateBorrowed) * base) / totalSupplied;
+      // Calculate legitimate percentage: (totalSupplied - illegitimateBorrowed) * 1e18 / totalSupplied
+      const legitimatePercentage =
+        ((totalSupplied - illegitimateBorrowed) * base) / totalSupplied;
 
-        // The scale factor is the inverse of the legitimate percentage
-        // If 70% is legitimate, scale factor should be 1/0.7 ≈ 1.429
-        scaleFactor = (base * base) / legitimatePercentage;
-      }
-
-      // Whitelist the token with the calculated scale factor
-      m.call(ionicDebtToken, "whitelistIonToken", [
-        token.address,
-        scaleFactor.toString(),
-      ]);
+      // The scale factor is the inverse of the legitimate percentage
+      // If 70% is legitimate, scale factor should be 1/0.7 ≈ 1.429
+      scaleFactor = (base * base) / legitimatePercentage;
     }
+
+    // Whitelist the token with the calculated scale factor
+    m.call(
+      ionicDebtToken,
+      "whitelistIonToken",
+      [token.address, scaleFactor.toString()],
+      { id: `whitelist_${token.address}` }
+    );
+
+    console.log(
+      `Whitelisted ${token.address} with scale factor ${scaleFactor}`
+    );
   }
 
   return {
