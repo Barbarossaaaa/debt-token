@@ -87,11 +87,12 @@ contract IonicDebtToken is
      * @param _usdcAddress Address of the USDC token
      */
     function initialize(
+        address _owner,
         address _masterPriceOracle,
         address _usdcAddress
     ) public initializer {
         __ERC20_init("IonicDebtToken", "dION");
-        __Ownable_init(msg.sender);
+        __Ownable_init(_owner);
         __UUPSUpgradeable_init();
 
         if (_masterPriceOracle == address(0)) revert InvalidMasterPriceOracle();

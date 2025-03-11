@@ -24,6 +24,6 @@ export function getNetworkConfig(network: string) {
  * @returns Configuration object for the current network or localhost config if not specified
  */
 export function getCurrentNetworkConfig() {
-  const network = process.env.HARDHAT_NETWORK || "localhost";
+  const network = process.env.HARDHAT_NETWORK || "mode-mainnet";
   return getNetworkConfig(network);
 }

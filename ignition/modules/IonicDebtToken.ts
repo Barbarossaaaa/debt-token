@@ -40,7 +40,7 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
   const encodedFunctionCall = m.encodeFunctionCall(
     implementation,
     "initialize",
-    [masterPriceOracleAddress, usdcAddress]
+    [proxyAdminOwner, masterPriceOracleAddress, usdcAddress]
   );
 
   // Deploy the IonicDebtTokenProxy pointing to the implementation
