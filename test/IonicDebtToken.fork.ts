@@ -1,17 +1,17 @@
 import { describe, it, beforeEach } from "node:test";
 import { network } from "hardhat";
 import assert from "node:assert/strict";
-import { getAddress } from "viem";
+import { formatUnits, getAddress } from "viem";
 import IonicDebtTokenModule from "../ignition/modules/IonicDebtToken.js";
 import { modeMainnetConfig } from "../ignition/config/mode-mainnet.js";
 
-const SAMPLE_ION_TOKEN = "0x1230000000000000000000000000000000000000"; // Replace with actual ionToken address for testing
+const ION_USDC = "0x2BE717340023C9e14C1Bb12cb3ecBcfd3c3fB038";
 
 /*
  * Tests for IonicDebtToken contract using Mode mainnet fork
  */
 describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
-  const { viem, ignition } = await network.connect();
+  const { viem, ignition, provider } = await network.connect();
   const [walletClient] = await viem.getWalletClients();
   const owner = getAddress(walletClient.account.address);
   let ionicDebtToken: any;
@@ -23,7 +23,7 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
     ionicDebtToken = deployment.ionicDebtToken;
     proxyAdmin = deployment.proxyAdmin;
     // Get the ionToken contract instance
-    ionToken = await viem.getContractAt("IIonToken", SAMPLE_ION_TOKEN);
+    ionToken = await viem.getContractAt("IIonToken", ION_USDC);
   });
 
   describe("Initialization", () => {
@@ -45,17 +45,14 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
       // Use a scale factor of 1e18
       const scaleFactor = 1000000000000000000n; // 1 ETH in wei
 
-      await ionicDebtToken.write.whitelistIonToken([
-        SAMPLE_ION_TOKEN,
-        scaleFactor,
-      ]);
+      await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
 
       const isWhitelisted = await ionicDebtToken.read.whitelistedIonTokens([
-        SAMPLE_ION_TOKEN,
+        ION_USDC,
       ]);
 
       const storedScaleFactor = await ionicDebtToken.read.ionTokenScaleFactors([
-        SAMPLE_ION_TOKEN,
+        ION_USDC,
       ]);
 
       assert.equal(isWhitelisted, true);
@@ -66,18 +63,15 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
       // First whitelist the token
       const initialScaleFactor = 1000000000000000000n; // 1 ETH in wei
       await ionicDebtToken.write.whitelistIonToken([
-        SAMPLE_ION_TOKEN,
+        ION_USDC,
         initialScaleFactor,
       ]);
 
       const newScaleFactor = 2000000000000000000n; // 2 ETH in wei
-      await ionicDebtToken.write.updateScaleFactor([
-        SAMPLE_ION_TOKEN,
-        newScaleFactor,
-      ]);
+      await ionicDebtToken.write.updateScaleFactor([ION_USDC, newScaleFactor]);
 
       const storedScaleFactor = await ionicDebtToken.read.ionTokenScaleFactors([
-        SAMPLE_ION_TOKEN,
+        ION_USDC,
       ]);
 
       assert.equal(storedScaleFactor, newScaleFactor);
@@ -85,47 +79,126 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
   });
 
   describe("Minting", () => {
-    it("should allow minting with whitelisted ionToken", async () => {
-      // Amount of ion tokens to mint
-      const mintAmount = 10000000000000000000n; // 10 tokens
-      const user = walletClient.account.address;
+    it.only("should allow minting with whitelisted ionToken", async () => {
+      // Use a whale address that has ionTokens
+      const whaleAddress = "0xE5859cbc7a5C954D33480E67266c2bbc919a966e";
 
-      // First whitelist the token
-      const scaleFactor = 1000000000000000000n;
-      await ionicDebtToken.write.whitelistIonToken([
-        SAMPLE_ION_TOKEN,
-        scaleFactor,
-      ]);
+      // Impersonate the whale account
+      await provider.request({
+        method: "hardhat_impersonateAccount",
+        params: [whaleAddress],
+      });
 
-      // Get user's initial balance
-      const initialBalance = await ionToken.read.balanceOf([user]);
+      const whale = await viem.getWalletClient(whaleAddress as `0x${string}`);
 
-      // If user doesn't have enough tokens, we need to get them from a whale
-      if (initialBalance < mintAmount) {
-        // This part would need to be implemented with actual whale addresses
-        // and proper token distribution for testing
-        console.log(
-          "Test requires tokens to be distributed to the test account first"
+      console.log(`\nMinting debt tokens for whale address: ${whaleAddress}\n`);
+
+      // Process each token from the config
+      for (const tokenConfig of modeMainnetConfig.tokenConfigs) {
+        const tokenAddress = getAddress(tokenConfig.address);
+        const tokenContract = await viem.getContractAt(
+          "IonicDebtToken",
+          tokenAddress
         );
-        return;
+
+        try {
+          const symbol = await tokenContract.read
+            .symbol()
+            .catch(() => "Unknown");
+          const decimals = Number(
+            await tokenContract.read.decimals().catch(() => 18)
+          );
+          const balance = await tokenContract.read.balanceOf([whaleAddress]);
+
+          if (balance === 0n) {
+            console.log(
+              `No balance for ${symbol} (${tokenAddress}), skipping...\n`
+            );
+            continue;
+          }
+
+          console.log(`Processing ${symbol} (${tokenAddress})`);
+          console.log(`Raw Balance: ${balance}`);
+          console.log(`Formatted Balance: ${formatUnits(balance, decimals)}\n`);
+
+          // Calculate scale factor based on config
+          const BASE = 1000000000000000000n; // 1e18
+          let scaleFactor;
+
+          if (BigInt(tokenConfig.totalSupplied) === 0n) {
+            scaleFactor = BASE;
+          } else {
+            const totalSupplied = BigInt(tokenConfig.totalSupplied);
+            const illegitimateBorrowed = BigInt(
+              tokenConfig.illegitimateBorrowed
+            );
+
+            // Calculate legitimate percentage: (totalSupplied - illegitimateBorrowed) * 1e18 / totalSupplied
+            const legitimatePercentage =
+              ((totalSupplied - illegitimateBorrowed) * BASE) / totalSupplied;
+
+            // The scale factor is the inverse of the legitimate percentage
+            scaleFactor = (BASE * BASE) / legitimatePercentage;
+          }
+
+          // Whitelist the token with calculated scale factor
+          await ionicDebtToken.write.whitelistIonToken([
+            tokenAddress,
+            scaleFactor,
+          ]);
+
+          // Get initial debt token balance
+          const initialDebtBalance = await ionicDebtToken.read.balanceOf([
+            whaleAddress,
+          ]);
+          console.log(`Initial debt balance: ${initialDebtBalance}`);
+
+          // Approve the IonicDebtToken contract to spend whale's entire balance
+          await tokenContract.write.approve([ionicDebtToken.address, balance], {
+            account: whale.account,
+          });
+
+          // Mint dION tokens using entire balance
+          await ionicDebtToken.write.mint([tokenAddress, balance], {
+            account: whale.account,
+          });
+
+          // Check final debt token balance
+          const finalDebtBalance = await ionicDebtToken.read.balanceOf([
+            whaleAddress,
+          ]);
+          console.log(`Final debt balance: ${finalDebtBalance}`);
+          console.log(`Increase: ${finalDebtBalance - initialDebtBalance}\n`);
+
+          // Verify minting was successful
+          assert.ok(
+            finalDebtBalance > initialDebtBalance,
+            `Should have received debt tokens for ${symbol}`
+          );
+
+          // More specific balance check
+          const expectedIncrease = balance;
+          assert.equal(
+            finalDebtBalance - initialDebtBalance,
+            expectedIncrease,
+            `Debt token balance should have increased by ${balance} for ${symbol}`
+          );
+
+          console.log(`Successfully minted debt tokens for ${symbol}\n---\n`);
+        } catch (error) {
+          console.log(
+            `Error processing token ${tokenAddress}: ${
+              (error as Error).message
+            }\n`
+          );
+        }
       }
 
-      // Approve the IonicDebtToken contract to spend user's ionTokens
-      await ionToken.write.approve([ionicDebtToken.address, mintAmount]);
-
-      // Check initial debt token balance
-      const initialDebtBalance = await ionicDebtToken.read.balanceOf([user]);
-
-      // Mint dION tokens
-      await ionicDebtToken.write.mint([SAMPLE_ION_TOKEN, mintAmount]);
-
-      // Check final debt token balance
-      const finalDebtBalance = await ionicDebtToken.read.balanceOf([user]);
-
-      assert.ok(
-        finalDebtBalance > initialDebtBalance,
-        "User should have received debt tokens"
-      );
+      // Stop impersonating the whale
+      await provider.request({
+        method: "hardhat_stopImpersonatingAccount",
+        params: [whaleAddress],
+      });
     });
   });
 
@@ -135,10 +208,7 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
       const scaleFactor = 1000000000000000000n;
       const mintAmount = 10000000000000000000n;
 
-      await ionicDebtToken.write.whitelistIonToken([
-        SAMPLE_ION_TOKEN,
-        scaleFactor,
-      ]);
+      await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
 
       // Get the contract's ionToken balance
       const contractBalance = await ionToken.read.balanceOf([
@@ -157,7 +227,7 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
       const withdrawAmount = contractBalance / 2n;
 
       await ionicDebtToken.write.withdrawIonTokens([
-        SAMPLE_ION_TOKEN,
+        ION_USDC,
         withdrawAmount,
         owner,
       ]);
@@ -188,15 +258,12 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
     it("should allow owner to remove an ionToken from whitelist", async () => {
       // First whitelist the token
       const scaleFactor = 1000000000000000000n;
-      await ionicDebtToken.write.whitelistIonToken([
-        SAMPLE_ION_TOKEN,
-        scaleFactor,
-      ]);
+      await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
 
-      await ionicDebtToken.write.removeIonToken([SAMPLE_ION_TOKEN]);
+      await ionicDebtToken.write.removeIonToken([ION_USDC]);
 
       const isWhitelisted = await ionicDebtToken.read.whitelistedIonTokens([
-        SAMPLE_ION_TOKEN,
+        ION_USDC,
       ]);
 
       assert.equal(isWhitelisted, false);

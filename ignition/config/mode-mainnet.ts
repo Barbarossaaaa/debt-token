@@ -6,9 +6,9 @@ import { getAddress, parseUnits } from "viem";
 export const modeMainnetConfig = {
   // Core deployment parameters
   masterPriceOracleAddress: getAddress(
-    "0x1234567890123456789012345678901234567890"
+    "0x2BAF3A2B667A5027a83101d218A9e8B73577F117"
   ), // Mode mainnet master price oracle address
-  usdcAddress: getAddress("0xd988097fb8612ae244b87df08e2abe6c3f25b08b"), // Mode mainnet USDC address
+  usdcAddress: getAddress("0xd988097fb8612cc24eec14542bc03424c656005f"), // Mode mainnet USDC address
 
   // Token configurations
   tokenConfigs: [
