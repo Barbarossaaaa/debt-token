@@ -43,8 +43,8 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
 
   describe("IonToken Whitelisting", () => {
     it("owner should be able to whitelist an ionToken", async () => {
-      // Use a scale factor of 1e18
-      const scaleFactor = 1000000000000000000n; // 1 ETH in wei
+      // Use a scale factor for 98.2% (10183 with 4 decimal precision)
+      const scaleFactor = 10183n;
 
       await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
 
@@ -60,15 +60,34 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
       assert.equal(storedScaleFactor, scaleFactor);
     });
 
+    it("should calculate correct percentage from scale factor", async () => {
+      // Test with 98.2% (scale factor 10183)
+      const scaleFactor = 10183n;
+      const SCALE_PRECISION = 10000n;
+
+      await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
+
+      // Calculate the actual percentage: (SCALE_PRECISION * SCALE_PRECISION) / scaleFactor
+      const actualPercentage =
+        Number((SCALE_PRECISION * SCALE_PRECISION) / scaleFactor) / 100;
+
+      // Should be approximately 98.2%
+      assert.ok(
+        Math.abs(actualPercentage - 98.2) < 0.1,
+        `Expected ~98.2%, got ${actualPercentage}%`
+      );
+    });
+
     it("owner should be able to update a scale factor", async () => {
-      // First whitelist the token
-      const initialScaleFactor = 1000000000000000000n; // 1 ETH in wei
+      // First whitelist the token with 98.2%
+      const initialScaleFactor = 10183n;
       await ionicDebtToken.write.whitelistIonToken([
         ION_USDC,
         initialScaleFactor,
       ]);
 
-      const newScaleFactor = 2000000000000000000n; // 2 ETH in wei
+      // Update to 99.5% (scale factor ≈ 10050)
+      const newScaleFactor = 10050n;
       await ionicDebtToken.write.updateScaleFactor([ION_USDC, newScaleFactor]);
 
       const storedScaleFactor = await ionicDebtToken.read.ionTokenScaleFactors([

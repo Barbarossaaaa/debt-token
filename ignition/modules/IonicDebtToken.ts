@@ -71,8 +71,8 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
 
   // Calculate scale factors and whitelist tokens
   for (const token of tokenConfigs) {
-    // Base of 1e18 (18 decimal places)
-    const BASE = "1000000000000000000";
+    // Use SCALE_PRECISION (10000) for 4 decimal places of precision
+    const SCALE_PRECISION = BigInt("10000");
     let scaleFactor;
 
     if (token.totalSupplied === "0") {
@@ -81,15 +81,32 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
       // Use string math operations via BigInt
       const totalSupplied = BigInt(token.totalSupplied);
       const illegitimateBorrowed = BigInt(token.illegitimateBorrowed);
-      const base = BigInt(BASE);
 
-      // Calculate legitimate percentage: (totalSupplied - illegitimateBorrowed) * 1e18 / totalSupplied
+      // Calculate legitimate percentage with 4 decimal precision
+      // Example: if 98.2% is legitimate, legitimatePercentage = 9820
       const legitimatePercentage =
-        ((totalSupplied - illegitimateBorrowed) * base) / totalSupplied;
+        ((totalSupplied - illegitimateBorrowed) * SCALE_PRECISION) /
+        totalSupplied;
 
-      // The scale factor is the inverse of the legitimate percentage
-      // If 70% is legitimate, scale factor should be 1/0.7 ≈ 1.429
-      scaleFactor = (base * base) / legitimatePercentage;
+      // Calculate scale factor
+      // If 98.2% is legitimate (legitimatePercentage = 9820),
+      // scaleFactor = (10000 * 10000) / 9820 ≈ 10183
+      scaleFactor = (SCALE_PRECISION * SCALE_PRECISION) / legitimatePercentage;
+
+      // Ensure scale factor is within valid range
+      if (scaleFactor > SCALE_PRECISION * 100n) {
+        console.log(
+          `Warning: Scale factor ${scaleFactor} for ${
+            token.address
+          } exceeds maximum. Capping at ${SCALE_PRECISION * 100n}`
+        );
+        scaleFactor = SCALE_PRECISION * 100n;
+      } else if (scaleFactor < SCALE_PRECISION) {
+        console.log(
+          `Warning: Scale factor ${scaleFactor} for ${token.address} is below minimum. Setting to ${SCALE_PRECISION}`
+        );
+        scaleFactor = SCALE_PRECISION;
+      }
     }
 
     // Whitelist the token with the calculated scale factor
@@ -101,7 +118,9 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
     );
 
     console.log(
-      `Whitelisted ${token.address} with scale factor ${scaleFactor}`
+      `Whitelisted ${token.address} with scale factor ${scaleFactor} (${Number(
+        BigInt("10000000000") / scaleFactor / 100n
+      )}% of value)`
     );
   }
 

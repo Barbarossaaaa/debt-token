@@ -16,13 +16,14 @@ error TransferFailed(address token, address from, address to, uint256 amount);
 error InvalidMasterPriceOracle();
 error InvalidUsdcAddress();
 error InsufficientBalance(address token, uint256 requested, uint256 available);
+error InvalidScaleFactorRange(uint256 scaleFactor, uint256 min, uint256 max);
 
 /**
  * @title IonToken Interface
  * @notice Interface for ionTokens (similar to Compound's cTokens)
  */
 interface IIonToken is IERC20 {
-    function exchangeRateCurrent() external returns (uint256);
+    function exchangeRateCurrent() external view returns (uint256);
 
     function underlying() external view returns (address);
 }
@@ -48,6 +49,9 @@ contract IonicDebtToken is
     OwnableUpgradeable,
     UUPSUpgradeable
 {
+    // Precision for scale factors (4 decimal places)
+    uint256 public constant SCALE_PRECISION = 10000;
+
     // Address of the MasterPriceOracle contract
     IMasterPriceOracle public masterPriceOracle;
 
@@ -105,7 +109,9 @@ contract IonicDebtToken is
     /**
      * @notice Whitelist an ionToken with its scale factor
      * @param ionToken Address of the ionToken to whitelist
-     * @param scaleFactor Scale factor for the ionToken
+     * @param scaleFactor Scale factor for the ionToken (with SCALE_PRECISION decimals)
+     * @dev For example, to get 98.2% of value, use scaleFactor = (SCALE_PRECISION * 100) / 982 ≈ 10183
+     * @dev Valid range is [SCALE_PRECISION, SCALE_PRECISION * 100] to ensure 1% to 100% range
      */
     function whitelistIonToken(
         address ionToken,
@@ -113,6 +119,9 @@ contract IonicDebtToken is
     ) external onlyOwner {
         if (ionToken == address(0)) revert ZeroAddress();
         if (scaleFactor == 0) revert ZeroScaleFactor();
+        // Ensure scale factor is reasonable (minimum 1%, maximum 100%)
+        if (scaleFactor < SCALE_PRECISION || scaleFactor > SCALE_PRECISION * 100)
+            revert InvalidScaleFactorRange(scaleFactor, SCALE_PRECISION, SCALE_PRECISION * 100);
 
         whitelistedIonTokens[ionToken] = true;
         ionTokenScaleFactors[ionToken] = scaleFactor;
@@ -124,6 +133,7 @@ contract IonicDebtToken is
      * @notice Update the scale factor for a whitelisted ionToken
      * @param ionToken Address of the ionToken
      * @param newScaleFactor New scale factor for the ionToken
+     * @dev Valid range is [SCALE_PRECISION, SCALE_PRECISION * 100] to ensure 1% to 100% range
      */
     function updateScaleFactor(
         address ionToken,
@@ -132,6 +142,9 @@ contract IonicDebtToken is
         if (!whitelistedIonTokens[ionToken])
             revert IonTokenNotWhitelisted(ionToken);
         if (newScaleFactor == 0) revert ZeroScaleFactor();
+        // Ensure scale factor is reasonable (minimum 1%, maximum 100%)
+        if (newScaleFactor < SCALE_PRECISION || newScaleFactor > SCALE_PRECISION * 100)
+            revert InvalidScaleFactorRange(newScaleFactor, SCALE_PRECISION, SCALE_PRECISION * 100);
 
         ionTokenScaleFactors[ionToken] = newScaleFactor;
 
