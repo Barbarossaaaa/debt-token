@@ -43,10 +43,15 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
 
   describe("IonToken Whitelisting", () => {
     it("owner should be able to whitelist an ionToken", async () => {
-      // Use a scale factor for 98.2% (10183 with 4 decimal precision)
-      const scaleFactor = 10183n;
+      // For 98.2% value recognition, use 982 as numerator and 1000 as denominator
+      const numerator = 982n;
+      const denominator = 1000n;
 
-      await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
+      await ionicDebtToken.write.whitelistIonToken([
+        ION_USDC,
+        numerator,
+        denominator,
+      ]);
 
       const isWhitelisted = await ionicDebtToken.read.whitelistedIonTokens([
         ION_USDC,
@@ -57,19 +62,23 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
       ]);
 
       assert.equal(isWhitelisted, true);
-      assert.equal(storedScaleFactor, scaleFactor);
+      assert.equal(storedScaleFactor.numerator, numerator);
+      assert.equal(storedScaleFactor.denominator, denominator);
     });
 
     it("should calculate correct percentage from scale factor", async () => {
-      // Test with 98.2% (scale factor 10183)
-      const scaleFactor = 10183n;
-      const SCALE_PRECISION = 10000n;
+      // For 98.2% value recognition
+      const numerator = 982n;
+      const denominator = 1000n;
 
-      await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
+      await ionicDebtToken.write.whitelistIonToken([
+        ION_USDC,
+        numerator,
+        denominator,
+      ]);
 
-      // Calculate the actual percentage: (SCALE_PRECISION * SCALE_PRECISION) / scaleFactor
-      const actualPercentage =
-        Number((SCALE_PRECISION * SCALE_PRECISION) / scaleFactor) / 100;
+      // Calculate the actual percentage
+      const actualPercentage = Number((numerator * 100n) / denominator);
 
       // Should be approximately 98.2%
       assert.ok(
@@ -78,28 +87,36 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
       );
     });
 
-    it("owner should be able to update a scale factor", async () => {
-      // First whitelist the token with 98.2%
-      const initialScaleFactor = 10183n;
+    it("owner should be able to update scale factors", async () => {
+      // First whitelist with 98.2%
+      const initialNumerator = 982n;
+      const initialDenominator = 1000n;
       await ionicDebtToken.write.whitelistIonToken([
         ION_USDC,
-        initialScaleFactor,
+        initialNumerator,
+        initialDenominator,
       ]);
 
-      // Update to 99.5% (scale factor ≈ 10050)
-      const newScaleFactor = 10050n;
-      await ionicDebtToken.write.updateScaleFactor([ION_USDC, newScaleFactor]);
+      // Update to 99.5%
+      const newNumerator = 995n;
+      const newDenominator = 1000n;
+      await ionicDebtToken.write.updateScaleFactor([
+        ION_USDC,
+        newNumerator,
+        newDenominator,
+      ]);
 
       const storedScaleFactor = await ionicDebtToken.read.ionTokenScaleFactors([
         ION_USDC,
       ]);
 
-      assert.equal(storedScaleFactor, newScaleFactor);
+      assert.equal(storedScaleFactor.numerator, newNumerator);
+      assert.equal(storedScaleFactor.denominator, newDenominator);
     });
   });
 
   describe("Minting", () => {
-    it.only("should allow minting with whitelisted ionToken", async () => {
+    it("should allow minting with whitelisted ionToken", async () => {
       // Use a whale address that has ionTokens
       const whaleAddress = "0xE5859cbc7a5C954D33480E67266c2bbc919a966e";
 
@@ -128,9 +145,7 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
         );
 
         const symbol = await tokenContract.read.symbol().catch(() => "Unknown");
-        const decimals = Number(
-          await tokenContract.read.decimals().catch(() => 18)
-        );
+        const decimals = Number(await tokenContract.read.decimals());
         const balance = await tokenContract.read.balanceOf([whaleAddress]);
 
         if (balance === 0n) {
@@ -170,7 +185,12 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
         ]);
         console.log(`Final debt balance: ${finalDebtBalance}`);
         console.log(
-          `Increase: ${finalDebtBalance - initialDebtBalance} for ${symbol}\n`
+          `Increase: ${
+            finalDebtBalance - initialDebtBalance
+          } (normalized: ${formatUnits(
+            BigInt(finalDebtBalance) - BigInt(initialDebtBalance),
+            decimals
+          )}) for ${symbol}\n`
         );
       }
 
@@ -198,8 +218,7 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
   describe("Owner Operations", () => {
     it("should allow owner to withdraw ionTokens", async () => {
       // First whitelist the token and do some minting to get tokens in the contract
-      const scaleFactor = 1000000000000000000n;
-      const mintAmount = 10000000000000000000n;
+      const scaleFactor = 100000n;
 
       await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
 
@@ -250,7 +269,7 @@ describe.only("IonicDebtToken (Mode Mainnet Fork)", async function () {
   describe("IonToken Management", () => {
     it("should allow owner to remove an ionToken from whitelist", async () => {
       // First whitelist the token
-      const scaleFactor = 1000000000000000000n;
+      const scaleFactor = 100000n;
       await ionicDebtToken.write.whitelistIonToken([ION_USDC, scaleFactor]);
 
       await ionicDebtToken.write.removeIonToken([ION_USDC]);

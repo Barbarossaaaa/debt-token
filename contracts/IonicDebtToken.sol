@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import { ERC20Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // Custom Errors for IonicDebtToken contract
 error ZeroAddress();
 error ZeroAmount();
-error ZeroScaleFactor();
+error ZeroDenominator();
 error IonTokenNotWhitelisted(address ionToken);
 error TransferFailed(address token, address from, address to, uint256 amount);
 error InvalidMasterPriceOracle();
 error InvalidUsdcAddress();
 error InsufficientBalance(address token, uint256 requested, uint256 available);
-error InvalidScaleFactorRange(uint256 scaleFactor, uint256 min, uint256 max);
+error InvalidScaleFactorRange(uint256 numerator, uint256 denominator);
 
 /**
  * @title IonToken Interface
@@ -49,8 +49,11 @@ contract IonicDebtToken is
     OwnableUpgradeable,
     UUPSUpgradeable
 {
-    // Precision for scale factors (4 decimal places)
-    uint256 public constant SCALE_PRECISION = 10000;
+    // Struct to store scale factor data
+    struct ScaleFactor {
+        uint256 numerator;
+        uint256 denominator;
+    }
 
     // Address of the MasterPriceOracle contract
     IMasterPriceOracle public masterPriceOracle;
@@ -59,16 +62,24 @@ contract IonicDebtToken is
     address public usdcAddress;
 
     // Mapping of whitelisted ionTokens to their respective scale factors
-    mapping(address => uint256) public ionTokenScaleFactors;
+    mapping(address => ScaleFactor) public ionTokenScaleFactors;
 
     // Mapping to track if an ionToken is whitelisted
     mapping(address => bool) public whitelistedIonTokens;
 
     // Event emitted when a new ionToken is whitelisted
-    event IonTokenWhitelisted(address indexed ionToken, uint256 scaleFactor);
+    event IonTokenWhitelisted(
+        address indexed ionToken,
+        uint256 numerator,
+        uint256 denominator
+    );
 
     // Event emitted when an ionToken's scale factor is updated
-    event ScaleFactorUpdated(address indexed ionToken, uint256 newScaleFactor);
+    event ScaleFactorUpdated(
+        address indexed ionToken,
+        uint256 numerator,
+        uint256 denominator
+    );
 
     // Event emitted when tokens are minted
     event TokensMinted(
@@ -77,7 +88,7 @@ contract IonicDebtToken is
         uint256 ionTokenAmount,
         uint256 mintedAmount
     );
-    
+
     // Event emitted when ionTokens are withdrawn
     event IonTokensWithdrawn(
         address indexed ionToken,
@@ -109,46 +120,51 @@ contract IonicDebtToken is
     /**
      * @notice Whitelist an ionToken with its scale factor
      * @param ionToken Address of the ionToken to whitelist
-     * @param scaleFactor Scale factor for the ionToken (with SCALE_PRECISION decimals)
-     * @dev For example, to get 98.2% of value, use scaleFactor = (SCALE_PRECISION * 100) / 982 ≈ 10183
-     * @dev Valid range is [SCALE_PRECISION, SCALE_PRECISION * 100] to ensure 1% to 100% range
+     * @param numerator Numerator of the scale factor
+     * @param denominator Denominator of the scale factor
      */
     function whitelistIonToken(
         address ionToken,
-        uint256 scaleFactor
+        uint256 numerator,
+        uint256 denominator
     ) external onlyOwner {
         if (ionToken == address(0)) revert ZeroAddress();
-        if (scaleFactor == 0) revert ZeroScaleFactor();
-        // Ensure scale factor is reasonable (minimum 1%, maximum 100%)
-        if (scaleFactor < SCALE_PRECISION || scaleFactor > SCALE_PRECISION * 100)
-            revert InvalidScaleFactorRange(scaleFactor, SCALE_PRECISION, SCALE_PRECISION * 100);
+        if (denominator == 0) revert ZeroDenominator();
+        if (numerator > denominator)
+            revert InvalidScaleFactorRange(numerator, denominator);
 
         whitelistedIonTokens[ionToken] = true;
-        ionTokenScaleFactors[ionToken] = scaleFactor;
+        ionTokenScaleFactors[ionToken] = ScaleFactor({
+            numerator: numerator,
+            denominator: denominator
+        });
 
-        emit IonTokenWhitelisted(ionToken, scaleFactor);
+        emit IonTokenWhitelisted(ionToken, numerator, denominator);
     }
 
     /**
      * @notice Update the scale factor for a whitelisted ionToken
      * @param ionToken Address of the ionToken
-     * @param newScaleFactor New scale factor for the ionToken
-     * @dev Valid range is [SCALE_PRECISION, SCALE_PRECISION * 100] to ensure 1% to 100% range
+     * @param numerator New numerator of the scale factor
+     * @param denominator New denominator of the scale factor
      */
     function updateScaleFactor(
         address ionToken,
-        uint256 newScaleFactor
+        uint256 numerator,
+        uint256 denominator
     ) external onlyOwner {
         if (!whitelistedIonTokens[ionToken])
             revert IonTokenNotWhitelisted(ionToken);
-        if (newScaleFactor == 0) revert ZeroScaleFactor();
-        // Ensure scale factor is reasonable (minimum 1%, maximum 100%)
-        if (newScaleFactor < SCALE_PRECISION || newScaleFactor > SCALE_PRECISION * 100)
-            revert InvalidScaleFactorRange(newScaleFactor, SCALE_PRECISION, SCALE_PRECISION * 100);
+        if (denominator == 0) revert ZeroDenominator();
+        if (numerator > denominator)
+            revert InvalidScaleFactorRange(numerator, denominator);
 
-        ionTokenScaleFactors[ionToken] = newScaleFactor;
+        ionTokenScaleFactors[ionToken] = ScaleFactor({
+            numerator: numerator,
+            denominator: denominator
+        });
 
-        emit ScaleFactorUpdated(ionToken, newScaleFactor);
+        emit ScaleFactorUpdated(ionToken, numerator, denominator);
     }
 
     /**
@@ -225,16 +241,17 @@ contract IonicDebtToken is
         uint256 underlyingValueInUsd = (underlyingAmount *
             underlyingPriceInEth) / usdcPriceInEth;
 
-        // Scale down by the ionToken-specific scale factor
-        uint256 tokensToMint = underlyingValueInUsd /
-            ionTokenScaleFactors[ionToken];
+        // Apply scale factor using numerator/denominator
+        ScaleFactor memory scaleFactor = ionTokenScaleFactors[ionToken];
+        uint256 tokensToMint = (underlyingValueInUsd * scaleFactor.numerator) /
+            scaleFactor.denominator;
 
         // Mint dION tokens to the sender
         _mint(msg.sender, tokensToMint);
 
         emit TokensMinted(msg.sender, ionToken, amount, tokensToMint);
     }
-    
+
     /**
      * @notice Internal function to handle ionToken withdrawal logic
      * @param ionToken Address of the ionToken to withdraw
@@ -248,23 +265,28 @@ contract IonicDebtToken is
     ) internal {
         if (ionToken == address(0)) revert ZeroAddress();
         if (recipient == address(0)) revert ZeroAddress();
-        
+
         IIonToken ionTokenContract = IIonToken(ionToken);
         uint256 balance = ionTokenContract.balanceOf(address(this));
-        
+
         // If amount is 0, withdraw the entire balance
         uint256 withdrawAmount = amount == 0 ? balance : amount;
-        
-        if (withdrawAmount > balance) 
+
+        if (withdrawAmount > balance)
             revert InsufficientBalance(ionToken, withdrawAmount, balance);
-        
+
         bool success = ionTokenContract.transfer(recipient, withdrawAmount);
-        if (!success) 
-            revert TransferFailed(ionToken, address(this), recipient, withdrawAmount);
-        
+        if (!success)
+            revert TransferFailed(
+                ionToken,
+                address(this),
+                recipient,
+                withdrawAmount
+            );
+
         emit IonTokensWithdrawn(ionToken, recipient, withdrawAmount);
     }
-    
+
     /**
      * @notice Allows the owner to withdraw collected ionTokens
      * @param ionToken Address of the ionToken to withdraw
@@ -278,7 +300,7 @@ contract IonicDebtToken is
     ) external onlyOwner {
         _withdrawIonTokens(ionToken, amount, recipient);
     }
-    
+
     /**
      * @notice Allows the owner to withdraw the entire balance of an ionToken
      * @param ionToken Address of the ionToken to withdraw

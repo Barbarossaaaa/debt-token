@@ -1,6 +1,5 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 import { getCurrentNetworkConfig } from "../config/index.js";
-import { zeroAddress } from "viem";
 /**
  * IonicDebtToken Ignition Module
  *
@@ -19,13 +18,7 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
 
   // Core deployment parameters with defaults and overrides from config
   const masterPriceOracleAddress = networkConfig?.masterPriceOracleAddress;
-  console.log(
-    "🚀 ~ IonicDebtTokenModule ~ masterPriceOracleAddress:",
-    masterPriceOracleAddress
-  );
-
   const usdcAddress = networkConfig?.usdcAddress;
-  console.log("🚀 ~ IonicDebtTokenModule ~ usdcAddress:", usdcAddress);
 
   // Token configurations for calculating scale factors
   const tokenConfigs = networkConfig?.tokenConfigs;
@@ -71,57 +64,32 @@ const IonicDebtTokenModule = buildModule("IonicDebtTokenModule", (m) => {
 
   // Calculate scale factors and whitelist tokens
   for (const token of tokenConfigs) {
-    // Use SCALE_PRECISION (10000) for 4 decimal places of precision
-    const SCALE_PRECISION = BigInt("10000");
-    let scaleFactor;
+    const totalSupplied = BigInt(token.totalSupplied);
+    const illegitimateBorrowed = BigInt(token.illegitimateBorrowed);
 
     if (token.totalSupplied === "0") {
       throw new Error("Total supplied is 0");
     } else {
-      // Use string math operations via BigInt
-      const totalSupplied = BigInt(token.totalSupplied);
-      const illegitimateBorrowed = BigInt(token.illegitimateBorrowed);
+      // Use illegitimateBorrowed as numerator and totalSupplied as denominator
+      // This means if 98.2% of tokens were illegitimately borrowed, users will get 98.2% of value
+      const numerator = illegitimateBorrowed;
+      const denominator = totalSupplied;
 
-      // Calculate legitimate percentage with 4 decimal precision
-      // Example: if 98.2% is legitimate, legitimatePercentage = 9820
-      const legitimatePercentage =
-        ((totalSupplied - illegitimateBorrowed) * SCALE_PRECISION) /
-        totalSupplied;
+      // Whitelist the token with the calculated scale factors
+      m.call(
+        ionicDebtToken,
+        "whitelistIonToken",
+        [token.address, numerator.toString(), denominator.toString()],
+        { id: `whitelist_${token.address}` }
+      );
 
-      // Calculate scale factor
-      // If 98.2% is legitimate (legitimatePercentage = 9820),
-      // scaleFactor = (10000 * 10000) / 9820 ≈ 10183
-      scaleFactor = (SCALE_PRECISION * SCALE_PRECISION) / legitimatePercentage;
+      // Calculate percentage of value that will be recognized
+      const valuePercentage = (illegitimateBorrowed * 100n) / totalSupplied;
 
-      // Ensure scale factor is within valid range
-      if (scaleFactor > SCALE_PRECISION * 100n) {
-        console.log(
-          `Warning: Scale factor ${scaleFactor} for ${
-            token.address
-          } exceeds maximum. Capping at ${SCALE_PRECISION * 100n}`
-        );
-        scaleFactor = SCALE_PRECISION * 100n;
-      } else if (scaleFactor < SCALE_PRECISION) {
-        console.log(
-          `Warning: Scale factor ${scaleFactor} for ${token.address} is below minimum. Setting to ${SCALE_PRECISION}`
-        );
-        scaleFactor = SCALE_PRECISION;
-      }
+      console.log(
+        `Whitelisted ${token.address} with scale factor ${numerator}/${denominator} (${valuePercentage}% of value)`
+      );
     }
-
-    // Whitelist the token with the calculated scale factor
-    m.call(
-      ionicDebtToken,
-      "whitelistIonToken",
-      [token.address, scaleFactor.toString()],
-      { id: `whitelist_${token.address}` }
-    );
-
-    console.log(
-      `Whitelisted ${token.address} with scale factor ${scaleFactor} (${Number(
-        BigInt("10000000000") / scaleFactor / 100n
-      )}% of value)`
-    );
   }
 
   return {
