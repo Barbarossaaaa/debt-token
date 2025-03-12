@@ -200,24 +200,16 @@ contract IonicDebtToken is
     }
 
     /**
-     * @notice Mint dION tokens by providing whitelisted ionTokens
-     * @param ionToken Address of the ionToken to provide
-     * @param amount Amount of ionTokens to provide
+     * @notice Preview the amount of dION tokens that would be minted for a given amount of ionTokens
+     * @param ionToken Address of the ionToken to check
+     * @param amount Amount of ionTokens to simulate
+     * @return tokensToMint The amount of dION tokens that would be minted
      */
-    function mint(address ionToken, uint256 amount) external {
-        if (!whitelistedIonTokens[ionToken])
-            revert IonTokenNotWhitelisted(ionToken);
+    function previewMint(address ionToken, uint256 amount) public view returns (uint256 tokensToMint) {
+        if (!whitelistedIonTokens[ionToken]) revert IonTokenNotWhitelisted(ionToken);
         if (amount == 0) revert ZeroAmount();
 
-        // Transfer ionTokens from sender to this contract
         IIonToken ionTokenContract = IIonToken(ionToken);
-        bool success = ionTokenContract.transferFrom(
-            msg.sender,
-            address(this),
-            amount
-        );
-        if (!success)
-            revert TransferFailed(ionToken, msg.sender, address(this), amount);
 
         // Get exchange rate from ionToken to underlying
         uint256 exchangeRate = ionTokenContract.exchangeRateCurrent();
@@ -236,15 +228,33 @@ contract IonicDebtToken is
         uint256 usdcPriceInEth = masterPriceOracle.price(usdcAddress);
 
         // Calculate USD value of the underlying tokens
-        // The underlying token price is in ETH terms, so we divide by USDC price in ETH to get USD terms
-        // Both prices are assumed to be scaled by the same factor (typically 1e18)
-        uint256 underlyingValueInUsd = (underlyingAmount *
-            underlyingPriceInEth) / usdcPriceInEth;
+        uint256 underlyingValueInUsd = (underlyingAmount * underlyingPriceInEth) / usdcPriceInEth;
 
         // Apply scale factor using numerator/denominator
         ScaleFactor memory scaleFactor = ionTokenScaleFactors[ionToken];
-        uint256 tokensToMint = (underlyingValueInUsd * scaleFactor.numerator) /
-            scaleFactor.denominator;
+        tokensToMint = (underlyingValueInUsd * scaleFactor.numerator) / scaleFactor.denominator;
+
+        return tokensToMint;
+    }
+
+    /**
+     * @notice Mint dION tokens by providing whitelisted ionTokens
+     * @param ionToken Address of the ionToken to provide
+     * @param amount Amount of ionTokens to provide
+     */
+    function mint(address ionToken, uint256 amount) external {
+        // Calculate tokens to mint using preview function
+        uint256 tokensToMint = previewMint(ionToken, amount);
+
+        // Transfer ionTokens from sender to this contract
+        IIonToken ionTokenContract = IIonToken(ionToken);
+        bool success = ionTokenContract.transferFrom(
+            msg.sender,
+            address(this),
+            amount
+        );
+        if (!success)
+            revert TransferFailed(ionToken, msg.sender, address(this), amount);
 
         // Mint dION tokens to the sender
         _mint(msg.sender, tokensToMint);
