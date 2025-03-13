@@ -99,6 +99,16 @@ const config: HardhatUserConfig = {
         blockNumber: 20720089, // Specific block for consistent testing
         enabled: true,
       },
+      mining: {
+        auto: false,
+        interval: 1000,
+      },
+      chainId: 34443,
+    },
+    localhost: {
+      type: "http",
+      chainType: "generic",
+      url: "http://localhost:8545",
     },
     mode_mainnet: {
       type: "http",
